@@ -16,6 +16,10 @@ from open_deep_research.evidence.models import (
     EvidenceDocument,
     RetrievalHit,
 )
+from open_deep_research.evidence.qdrant_store import (
+    FastEmbedTextEmbedder,
+    QdrantHybridRetriever,
+)
 from open_deep_research.evidence.retrieval import (
     Embedder,
     InMemoryHybridRetriever,
@@ -27,8 +31,10 @@ __all__ = [
     "Embedder",
     "EvidenceChunk",
     "EvidenceDocument",
+    "FastEmbedTextEmbedder",
     "InMemoryHybridRetriever",
     "MarkdownChunker",
+    "QdrantHybridRetriever",
     "RetrievalExample",
     "RetrievalHit",
     "RetrievalMetrics",

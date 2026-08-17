@@ -3,13 +3,16 @@
 from collections.abc import Sequence
 
 import pytest
+from qdrant_client import QdrantClient
 
 from open_deep_research.evidence import (
     ChunkingConfig,
     EvidenceChunk,
     EvidenceDocument,
+    FastEmbedTextEmbedder,
     InMemoryHybridRetriever,
     MarkdownChunker,
+    QdrantHybridRetriever,
     RetrievalExample,
     audit_citations,
     evaluate_retriever,
@@ -158,3 +161,52 @@ def test_invalid_limits_and_empty_queries_fail_safely() -> None:
     assert retriever.retrieve("   ") == []
     with pytest.raises(ValueError, match="top_k"):
         retriever.retrieve("content", top_k=0)
+
+
+def test_qdrant_adapter_persists_and_fuses_candidates() -> None:
+    """Qdrant vectors and BM25 scores should produce one ranked result."""
+    chunks = [
+        make_chunk("recovery", "agent recovery"),
+        make_chunk("planning", "agent planning"),
+        make_chunk("memory", "long term memory"),
+    ]
+    retriever = QdrantHybridRetriever(
+        QdrantClient(location=":memory:"),
+        FakeEmbedder(),
+        semantic_weight=0.8,
+    )
+
+    retriever.index(chunks)
+    hits = retriever.retrieve("agent", top_k=2)
+
+    assert retriever.indexed_count == 3
+    assert hits[0].chunk.chunk_id == "recovery"
+    assert hits[0].semantic_score == pytest.approx(1.0)
+    assert hits[0].lexical_score > 0
+
+
+def test_qdrant_adapter_requires_explicit_snapshot_replacement() -> None:
+    """Existing collections should not be deleted without explicit ownership."""
+    client = QdrantClient(location=":memory:")
+    initial = QdrantHybridRetriever(client, FakeEmbedder())
+    initial.index([make_chunk("one", "agent recovery")])
+
+    guarded = QdrantHybridRetriever(client, FakeEmbedder())
+    with pytest.raises(ValueError, match="replace_snapshot"):
+        guarded.index([make_chunk("two", "agent planning")])
+
+    replacement = QdrantHybridRetriever(
+        client,
+        FakeEmbedder(),
+        replace_snapshot=True,
+    )
+    replacement.index([make_chunk("two", "agent planning")])
+    assert replacement.indexed_count == 1
+
+
+def test_fastembed_adapter_is_lazy() -> None:
+    """Constructing the production embedder should not download model weights."""
+    embedder = FastEmbedTextEmbedder(cache_dir="unused-in-construction")
+
+    assert embedder.model_name
+    assert embedder._model is None

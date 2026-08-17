@@ -60,6 +60,10 @@ logs/
 # Dependencies
 node_modules/
 
+# Local vector data
+.qdrant/
+data/
+
 # LangGraph specific
 .langgraph/
 
