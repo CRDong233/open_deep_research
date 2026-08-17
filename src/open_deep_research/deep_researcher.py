@@ -29,6 +29,7 @@ from open_deep_research.prompts import (
     transform_messages_into_research_topic_prompt,
 )
 from open_deep_research.reliability import ToolExecutionPolicy, execute_with_policy
+from open_deep_research.skill_runtime import format_skill_prompt, get_active_skill
 from open_deep_research.state import (
     AgentInputState,
     AgentState,
@@ -402,6 +403,7 @@ async def researcher(state: ResearcherState, config: RunnableConfig) -> Command[
         mcp_prompt=configurable.mcp_prompt or "", 
         date=get_today_str()
     )
+    researcher_prompt += format_skill_prompt(get_active_skill(config))
     
     # Configure model with tools, retry logic, and settings
     research_model = (

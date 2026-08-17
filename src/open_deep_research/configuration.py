@@ -125,6 +125,14 @@ class Configuration(BaseModel):
         le=20,
         description="Maximum memories returned by memory_recall",
     )
+    active_skill: Optional[str] = Field(
+        default=None,
+        description="Optional versioned Skill name applied to researchers",
+    )
+    skills_path: str = Field(
+        default="skills",
+        description="Directory containing versioned Markdown Skill definitions",
+    )
     allow_clarification: bool = Field(
         default=True,
         metadata={

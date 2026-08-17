@@ -33,6 +33,7 @@ from open_deep_research.configuration import Configuration, SearchAPI
 from open_deep_research.knowledge import get_knowledge_search_tool
 from open_deep_research.memory_tools import get_memory_tools
 from open_deep_research.prompts import summarize_webpage_prompt
+from open_deep_research.skill_runtime import filter_tools_for_skill, get_active_skill
 from open_deep_research.state import ResearchComplete, Summary
 
 ##########################
@@ -604,7 +605,7 @@ async def get_all_tools(config: RunnableConfig):
     mcp_tools = await load_mcp_tools(config, existing_tool_names)
     tools.extend(mcp_tools)
     
-    return tools
+    return filter_tools_for_skill(tools, get_active_skill(config))
 
 def get_notes_from_tool_calls(messages: list[MessageLikeRepresentation]):
     """Extract notes from tool call messages."""
