@@ -147,6 +147,7 @@ You have access to two main tools:
 1. **tavily_search**: For conducting web searches to gather information
 2. **think_tool**: For reflection and strategic planning during research
 3. **knowledge_search** (when configured): For retrieving local evidence with `[E#]` citations and source character ranges
+4. **memory_recall / memory_write / memory_forget** (when configured): For user-scoped long-term memory
 {mcp_prompt}
 
 **CRITICAL: Use think_tool after each search to reflect on results and plan next steps. Do not call think_tool with the tavily_search or any other tools. It should be to reflect on the results of the search.**
@@ -161,6 +162,7 @@ Think like a human researcher with limited time. Follow these steps:
 4. **Execute narrower searches as you gather information** - Fill in the gaps
 5. **Stop when you can answer confidently** - Don't keep searching for perfection
 6. **Preserve local evidence citations** - When knowledge_search returns `[E#]` evidence, retain those identifiers with the claims they support
+7. **Use memory conservatively** - Recall when preferences are relevant; write or delete only after an explicit user request, and never store credentials, secrets, or authentication data
 </Instructions>
 
 <Hard Limits>

@@ -31,6 +31,7 @@ from tavily import AsyncTavilyClient
 
 from open_deep_research.configuration import Configuration, SearchAPI
 from open_deep_research.knowledge import get_knowledge_search_tool
+from open_deep_research.memory_tools import get_memory_tools
 from open_deep_research.prompts import summarize_webpage_prompt
 from open_deep_research.state import ResearchComplete, Summary
 
@@ -589,6 +590,9 @@ async def get_all_tools(config: RunnableConfig):
     knowledge_tool = await get_knowledge_search_tool(config)
     if knowledge_tool is not None:
         tools.append(knowledge_tool)
+
+    # Memory writes and deletion remain unavailable unless explicitly enabled.
+    tools.extend(await get_memory_tools(config))
     
     # Track existing tool names to prevent conflicts
     existing_tool_names = {

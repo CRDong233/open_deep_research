@@ -103,6 +103,28 @@ class Configuration(BaseModel):
         default=False,
         description="Explicitly replace an existing knowledge collection",
     )
+    enable_long_term_memory: bool = Field(
+        default=False,
+        description="Enable explicit user-scoped long-term memory tools",
+    )
+    memory_user_id: Optional[str] = Field(
+        default=None,
+        description="Stable user namespace required by long-term memory",
+    )
+    memory_qdrant_location: str = Field(
+        default=".qdrant",
+        description="Qdrant local path, :memory:, or URL for long-term memory",
+    )
+    memory_collection: str = Field(
+        default="agent_memories",
+        description="Dedicated Qdrant collection for long-term memories",
+    )
+    memory_top_k: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum memories returned by memory_recall",
+    )
     allow_clarification: bool = Field(
         default=True,
         metadata={
