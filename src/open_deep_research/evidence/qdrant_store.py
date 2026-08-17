@@ -132,6 +132,36 @@ class QdrantHybridRetriever:
             wait=True,
         )
 
+    def load_snapshot(self) -> int:
+        """Restore chunk payloads and BM25 state from an existing collection."""
+        if not self.client.collection_exists(self.collection_name):
+            raise ValueError(f"collection does not exist: {self.collection_name}")
+
+        chunks: list[EvidenceChunk] = []
+        offset = None
+        while True:
+            records, offset = self.client.scroll(
+                collection_name=self.collection_name,
+                offset=offset,
+                limit=256,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for record in records:
+                payload = record.payload or {}
+                chunk_payload = payload.get("chunk")
+                if isinstance(chunk_payload, dict):
+                    chunks.append(EvidenceChunk.model_validate(chunk_payload))
+            if offset is None:
+                break
+
+        chunk_ids = [chunk.chunk_id for chunk in chunks]
+        if len(set(chunk_ids)) != len(chunk_ids):
+            raise ValueError("stored collection contains duplicate chunk_id values")
+        self._chunks = {chunk.chunk_id: chunk for chunk in chunks}
+        self._lexical.index(chunks)
+        return len(chunks)
+
     def retrieve(self, query: str, *, top_k: int = 5) -> list[RetrievalHit]:
         """Fuse dense and lexical candidates into one inspectable ranking."""
         if top_k <= 0:

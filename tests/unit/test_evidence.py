@@ -7,6 +7,7 @@ from qdrant_client import QdrantClient
 
 from open_deep_research.evidence import (
     ChunkingConfig,
+    DirectoryDocumentLoader,
     EvidenceChunk,
     EvidenceDocument,
     FastEmbedTextEmbedder,
@@ -17,6 +18,7 @@ from open_deep_research.evidence import (
     audit_citations,
     evaluate_retriever,
     format_evidence_context,
+    ingest_directory,
 )
 from open_deep_research.evidence.retrieval import tokenize
 
@@ -210,3 +212,50 @@ def test_fastembed_adapter_is_lazy() -> None:
 
     assert embedder.model_name
     assert embedder._model is None
+
+
+def test_directory_ingestion_is_bounded_and_traceable(tmp_path) -> None:
+    """Only bounded UTF-8 source files should become evidence documents."""
+    (tmp_path / "guide.md").write_text(
+        "# Recovery Guide\n\nRetries must be bounded.",
+        encoding="utf-8",
+    )
+    (tmp_path / "empty.txt").write_text("  ", encoding="utf-8")
+    (tmp_path / "ignored.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "large.md").write_text("x" * 200, encoding="utf-8")
+    (tmp_path / "binary.txt").write_bytes(b"\xff\xfe")
+    loader = DirectoryDocumentLoader(tmp_path, max_file_bytes=100)
+
+    result = ingest_directory(
+        loader,
+        MarkdownChunker(ChunkingConfig(max_chars=80, overlap_chars=10, min_chars=20)),
+    )
+
+    assert [document.title for document in result.documents] == ["Recovery Guide"]
+    assert result.documents[0].metadata["relative_path"] == "guide.md"
+    assert len(result.chunks) == 1
+    assert result.chunks[0].uri.startswith("file:")
+    assert {issue.path for issue in result.issues} == {
+        "binary.txt",
+        "empty.txt",
+        "large.md",
+    }
+
+
+def test_qdrant_snapshot_can_be_loaded_without_reindexing() -> None:
+    """Stored payloads should restore local BM25 state after a restart."""
+    client = QdrantClient(location=":memory:")
+    writer = QdrantHybridRetriever(client, FakeEmbedder())
+    writer.index(
+        [
+            make_chunk("recovery", "agent recovery"),
+            make_chunk("planning", "agent planning"),
+        ]
+    )
+    reader = QdrantHybridRetriever(client, FakeEmbedder())
+
+    loaded = reader.load_snapshot()
+    hits = reader.retrieve("recovery", top_k=1)
+
+    assert loaded == 2
+    assert hits[0].chunk.chunk_id == "recovery"
