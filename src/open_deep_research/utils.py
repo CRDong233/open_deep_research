@@ -30,6 +30,7 @@ from mcp import McpError
 from tavily import AsyncTavilyClient
 
 from open_deep_research.configuration import Configuration, SearchAPI
+from open_deep_research.knowledge import get_knowledge_search_tool
 from open_deep_research.prompts import summarize_webpage_prompt
 from open_deep_research.state import ResearchComplete, Summary
 
@@ -583,6 +584,11 @@ async def get_all_tools(config: RunnableConfig):
     search_api = SearchAPI(get_config_value(configurable.search_api))
     search_tools = await get_search_tool(search_api)
     tools.extend(search_tools)
+
+    # Add local knowledge retrieval only when explicitly configured.
+    knowledge_tool = await get_knowledge_search_tool(config)
+    if knowledge_tool is not None:
+        tools.append(knowledge_tool)
     
     # Track existing tool names to prevent conflicts
     existing_tool_names = {

@@ -68,6 +68,41 @@ class Configuration(BaseModel):
         le=30,
         description="Initial exponential backoff for retryable tool failures",
     )
+    enable_knowledge_search: bool = Field(
+        default=False,
+        description="Enable local Qdrant-backed knowledge retrieval",
+    )
+    knowledge_base_path: Optional[str] = Field(
+        default=None,
+        description="Directory of local Markdown and text knowledge sources",
+    )
+    qdrant_location: str = Field(
+        default=".qdrant",
+        description="Qdrant local path, :memory:, or service URL",
+    )
+    qdrant_collection: str = Field(
+        default="evidence_chunks",
+        description="Qdrant collection owned by the knowledge service",
+    )
+    embedding_model: str = Field(
+        default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        description="FastEmbed model used for local knowledge vectors",
+    )
+    knowledge_top_k: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum evidence chunks returned by knowledge_search",
+    )
+    knowledge_max_file_bytes: int = Field(
+        default=2_000_000,
+        ge=1,
+        description="Maximum bytes read from one local knowledge file",
+    )
+    rebuild_knowledge_index: bool = Field(
+        default=False,
+        description="Explicitly replace an existing knowledge collection",
+    )
     allow_clarification: bool = Field(
         default=True,
         metadata={

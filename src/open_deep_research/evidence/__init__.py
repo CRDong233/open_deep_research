@@ -23,6 +23,7 @@ from open_deep_research.evidence.models import (
     RetrievalHit,
 )
 from open_deep_research.evidence.qdrant_store import (
+    DEFAULT_EMBEDDING_MODEL,
     FastEmbedTextEmbedder,
     QdrantHybridRetriever,
 )
@@ -34,6 +35,7 @@ from open_deep_research.evidence.retrieval import (
 __all__ = [
     "ChunkingConfig",
     "CitationAudit",
+    "DEFAULT_EMBEDDING_MODEL",
     "Embedder",
     "DirectoryDocumentLoader",
     "EvidenceChunk",
