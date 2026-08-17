@@ -51,6 +51,23 @@ class Configuration(BaseModel):
             }
         }
     )
+    tool_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        description="Maximum duration of one external tool attempt",
+    )
+    tool_max_attempts: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Maximum attempts for retryable tool failures",
+    )
+    tool_retry_backoff_seconds: float = Field(
+        default=0.25,
+        ge=0,
+        le=30,
+        description="Initial exponential backoff for retryable tool failures",
+    )
     allow_clarification: bool = Field(
         default=True,
         metadata={

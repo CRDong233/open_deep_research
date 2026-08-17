@@ -28,6 +28,7 @@ from open_deep_research.prompts import (
     research_system_prompt,
     transform_messages_into_research_topic_prompt,
 )
+from open_deep_research.reliability import ToolExecutionPolicy, execute_with_policy
 from open_deep_research.state import (
     AgentInputState,
     AgentState,
@@ -425,11 +426,21 @@ async def researcher(state: ResearcherState, config: RunnableConfig) -> Command[
 
 # Tool Execution Helper Function
 async def execute_tool_safely(tool, args, config):
-    """Safely execute a tool with error handling."""
-    try:
-        return await tool.ainvoke(args, config)
-    except Exception as e:
-        return f"Error executing tool: {str(e)}"
+    """Execute a tool with bounded retries and structured error handling."""
+    configurable = Configuration.from_runnable_config(config)
+    if tool is None:
+        return '{"ok": false, "error": {"kind": "invalid_input", "message": "Unknown tool"}}'
+    policy = ToolExecutionPolicy(
+        timeout_seconds=configurable.tool_timeout_seconds,
+        max_attempts=configurable.tool_max_attempts,
+        initial_backoff_seconds=configurable.tool_retry_backoff_seconds,
+        max_backoff_seconds=max(configurable.tool_retry_backoff_seconds, 2.0),
+    )
+    result = await execute_with_policy(
+        lambda: tool.ainvoke(args, config),
+        policy,
+    )
+    return result.as_tool_message()
 
 
 async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> Command[Literal["researcher", "compress_research"]]:
@@ -473,7 +484,7 @@ async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> Co
     # Execute all tool calls in parallel
     tool_calls = most_recent_message.tool_calls
     tool_execution_tasks = [
-        execute_tool_safely(tools_by_name[tool_call["name"]], tool_call["args"], config) 
+        execute_tool_safely(tools_by_name.get(tool_call["name"]), tool_call["args"], config)
         for tool_call in tool_calls
     ]
     observations = await asyncio.gather(*tool_execution_tasks)
