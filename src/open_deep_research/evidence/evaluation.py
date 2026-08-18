@@ -35,6 +35,29 @@ class RetrievalMetrics(BaseModel):
     top_k: int = Field(gt=0)
 
 
+class RefusalExample(BaseModel):
+    """One labelled query for retrieval acceptance or refusal calibration."""
+
+    query: str = Field(min_length=1)
+    should_answer: bool
+    relevant_chunk_ids: set[str] = Field(default_factory=set)
+
+
+class RefusalMetrics(BaseModel):
+    """Decision metrics for one minimum relevance threshold."""
+
+    threshold: float = Field(ge=0, le=1)
+    evaluated_queries: int = Field(ge=0)
+    accepted_queries: int = Field(ge=0)
+    refused_queries: int = Field(ge=0)
+    correct_accepts: int = Field(ge=0)
+    correct_refusals: int = Field(ge=0)
+    false_accepts: int = Field(ge=0)
+    false_refusals: int = Field(ge=0)
+    decision_accuracy: float = Field(ge=0, le=1)
+    coverage: float = Field(ge=0, le=1)
+
+
 def load_retrieval_examples(path: str | Path) -> list[RetrievalExample]:
     """Load a version-controlled JSONL retrieval regression set."""
     examples: list[RetrievalExample] = []
@@ -129,6 +152,83 @@ def evaluate_retriever(
         mean_reciprocal_rank=sum(reciprocal_ranks) / len(reciprocal_ranks),
         evaluated_queries=len(examples),
         top_k=top_k,
+    )
+
+
+def evaluate_refusal_threshold(
+    retriever: Retriever,
+    examples: Sequence[RefusalExample],
+    *,
+    threshold: float,
+    top_k: int = 5,
+) -> RefusalMetrics:
+    """Measure answer/refusal decisions without inferring semantic correctness."""
+    if not 0 <= threshold <= 1:
+        raise ValueError("threshold must be between 0 and 1")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive")
+
+    accepted = correct_accepts = correct_refusals = false_accepts = false_refusals = 0
+    for example in examples:
+        hits = retriever.retrieve(example.query, top_k=top_k)
+        accepts = bool(hits and hits[0].score >= threshold)
+        if accepts:
+            accepted += 1
+            retrieved_ids = {hit.chunk.chunk_id for hit in hits}
+            relevant = bool(example.relevant_chunk_ids.intersection(retrieved_ids))
+            if example.should_answer and relevant:
+                correct_accepts += 1
+            else:
+                false_accepts += 1
+        elif example.should_answer:
+            false_refusals += 1
+        else:
+            correct_refusals += 1
+
+    evaluated = len(examples)
+    refused = evaluated - accepted
+    correct = correct_accepts + correct_refusals
+    return RefusalMetrics(
+        threshold=threshold,
+        evaluated_queries=evaluated,
+        accepted_queries=accepted,
+        refused_queries=refused,
+        correct_accepts=correct_accepts,
+        correct_refusals=correct_refusals,
+        false_accepts=false_accepts,
+        false_refusals=false_refusals,
+        decision_accuracy=correct / evaluated if evaluated else 0,
+        coverage=accepted / evaluated if evaluated else 0,
+    )
+
+
+def calibrate_refusal_threshold(
+    retriever: Retriever,
+    examples: Sequence[RefusalExample],
+    *,
+    thresholds: Sequence[float],
+    top_k: int = 5,
+) -> RefusalMetrics:
+    """Choose the most accurate threshold, preferring fewer false accepts."""
+    if not thresholds:
+        raise ValueError("thresholds must not be empty")
+    results = [
+        evaluate_refusal_threshold(
+            retriever,
+            examples,
+            threshold=threshold,
+            top_k=top_k,
+        )
+        for threshold in thresholds
+    ]
+    return min(
+        results,
+        key=lambda item: (
+            -item.decision_accuracy,
+            item.false_accepts,
+            item.false_refusals,
+            item.threshold,
+        ),
     )
 
 

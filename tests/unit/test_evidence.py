@@ -17,10 +17,13 @@ from open_deep_research.evidence import (
     InMemoryHybridRetriever,
     MarkdownChunker,
     QdrantHybridRetriever,
+    RefusalExample,
     RetrievalExample,
     audit_citations,
+    calibrate_refusal_threshold,
     citation_id,
     evaluate_citation_references,
+    evaluate_refusal_threshold,
     evaluate_retriever,
     format_evidence_context,
     ingest_directory,
@@ -261,6 +264,58 @@ def test_evaluation_reports_recall_and_reciprocal_rank() -> None:
     assert metrics.recall_at_k == pytest.approx(1.0)
     assert metrics.mean_reciprocal_rank == pytest.approx(1.0)
     assert metrics.evaluated_queries == 2
+
+
+def test_refusal_threshold_reports_false_accepts_and_false_refusals() -> None:
+    """Threshold evaluation should expose both unsafe and over-cautious decisions."""
+    retriever = InMemoryHybridRetriever()
+    retriever.index(
+        [
+            make_chunk("retrieval", "hybrid retrieval BM25 embeddings"),
+            make_chunk("memory", "long term memory preference"),
+        ]
+    )
+    examples = [
+        RefusalExample(
+            query="hybrid retrieval",
+            should_answer=True,
+            relevant_chunk_ids={"retrieval"},
+        ),
+        RefusalExample(query="unrelated weather", should_answer=False),
+    ]
+
+    permissive = evaluate_refusal_threshold(retriever, examples, threshold=0)
+    strict = evaluate_refusal_threshold(retriever, examples, threshold=1)
+
+    assert permissive.false_accepts == 1
+    assert permissive.coverage == pytest.approx(1)
+    assert strict.false_accepts == 0
+    assert strict.correct_refusals == 1
+
+
+def test_refusal_threshold_calibration_prefers_safer_ties() -> None:
+    """Equal-accuracy thresholds should minimize false accepts first."""
+    retriever = InMemoryHybridRetriever()
+    retriever.index([make_chunk("retrieval", "hybrid retrieval")])
+    examples = [
+        RefusalExample(
+            query="hybrid retrieval",
+            should_answer=True,
+            relevant_chunk_ids={"retrieval"},
+        ),
+        RefusalExample(query="weather", should_answer=False),
+    ]
+
+    result = calibrate_refusal_threshold(
+        retriever,
+        examples,
+        thresholds=[0, 0.5, 1],
+        top_k=1,
+    )
+
+    assert result.threshold == pytest.approx(0.5)
+    assert result.decision_accuracy == pytest.approx(1)
+    assert result.false_accepts == 0
 
 
 def test_versioned_retrieval_regression_set_has_thirty_cases() -> None:
