@@ -24,6 +24,10 @@ class MemorySettings:
     collection_name: str = "agent_memories"
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     top_k: int = 5
+    ttl_days: float | None = None
+    recency_weight: float = 0.0
+    recency_half_life_days: float = 30.0
+    reject_sensitive: bool = True
 
     def __post_init__(self) -> None:
         """Require a user namespace whenever memory is enabled."""
@@ -31,6 +35,8 @@ class MemorySettings:
             raise ValueError("memory_user_id is required when memory is enabled")
         if self.top_k <= 0:
             raise ValueError("memory_top_k must be positive")
+        if self.ttl_days is not None and self.ttl_days <= 0:
+            raise ValueError("memory_ttl_days must be positive")
 
     @classmethod
     def from_runnable_config(cls, config: RunnableConfig) -> "MemorySettings":
@@ -43,6 +49,10 @@ class MemorySettings:
             collection_name=configured.memory_collection,
             embedding_model=configured.embedding_model,
             top_k=configured.memory_top_k,
+            ttl_days=configured.memory_ttl_days,
+            recency_weight=configured.memory_recency_weight,
+            recency_half_life_days=configured.memory_recency_half_life_days,
+            reject_sensitive=configured.memory_reject_sensitive,
         )
 
 
@@ -54,6 +64,10 @@ def build_memory_store(settings: MemorySettings) -> QdrantMemoryStore:
         create_qdrant_client(settings.qdrant_location),
         FastEmbedTextEmbedder(settings.embedding_model),
         collection_name=settings.collection_name,
+        default_ttl_days=settings.ttl_days,
+        recency_weight=settings.recency_weight,
+        recency_half_life_days=settings.recency_half_life_days,
+        reject_sensitive=settings.reject_sensitive,
     )
 
 

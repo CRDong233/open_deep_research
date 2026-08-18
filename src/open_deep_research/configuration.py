@@ -135,6 +135,26 @@ class Configuration(BaseModel):
         le=20,
         description="Maximum memories returned by memory_recall",
     )
+    memory_ttl_days: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="Optional default time-to-live for new memories",
+    )
+    memory_recency_weight: float = Field(
+        default=0.0,
+        ge=0,
+        le=0.5,
+        description="Optional recency contribution to memory recall ranking",
+    )
+    memory_recency_half_life_days: float = Field(
+        default=30.0,
+        gt=0,
+        description="Half-life used by optional memory recency decay",
+    )
+    memory_reject_sensitive: bool = Field(
+        default=True,
+        description="Reject memory writes that resemble credentials or passwords",
+    )
     active_skill: Optional[str] = Field(
         default=None,
         description="Optional versioned Skill name applied to researchers",

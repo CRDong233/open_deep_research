@@ -1,6 +1,7 @@
 """Unit tests for long-term memory and context budgeting."""
 
 from collections.abc import Sequence
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from qdrant_client import QdrantClient
@@ -10,7 +11,11 @@ from open_deep_research.context_budget import (
     ContextMessage,
     compress_context,
 )
-from open_deep_research.memory import MemoryKind, QdrantMemoryStore
+from open_deep_research.memory import (
+    MemoryKind,
+    QdrantMemoryStore,
+    contains_sensitive_memory,
+)
 
 
 class MemoryEmbedder:
@@ -76,6 +81,63 @@ def test_memory_recall_combines_similarity_and_importance() -> None:
     assert hits[0].record.content == "Python preference"
     assert hits[0].similarity == pytest.approx(hits[1].similarity)
     assert hits[0].score > hits[1].score
+
+
+class MutableClock:
+    """Controllable aware clock for deterministic memory lifecycle tests."""
+
+    def __init__(self) -> None:
+        self.now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+def test_memory_ttl_expires_and_removes_stale_records() -> None:
+    """Expired memories should not be recalled and should be purged lazily."""
+    clock = MutableClock()
+    store = QdrantMemoryStore(
+        QdrantClient(location=":memory:"),
+        MemoryEmbedder(),
+        default_ttl_days=1,
+        clock=clock,
+    )
+    written = store.remember(user_id="u", content="Python preference")
+    clock.now += timedelta(days=2)
+
+    assert store.recall(user_id="u", query="Python") == []
+    assert store.forget(user_id="u", memory_id=written.record.memory_id) is False
+
+
+def test_memory_recency_decay_breaks_similarity_ties() -> None:
+    """Optional decay should rank a newer equal-similarity memory first."""
+    clock = MutableClock()
+    store = QdrantMemoryStore(
+        QdrantClient(location=":memory:"),
+        MemoryEmbedder(),
+        importance_weight=0,
+        recency_weight=0.5,
+        recency_half_life_days=1,
+        clock=clock,
+    )
+    store.remember(user_id="u", content="Python old fact")
+    clock.now += timedelta(days=2)
+    store.remember(user_id="u", content="Python new fact")
+
+    hits = store.recall(user_id="u", query="Python", top_k=2)
+
+    assert [hit.record.content for hit in hits] == ["Python new fact", "Python old fact"]
+    assert hits[0].recency_score > hits[1].recency_score
+
+
+def test_memory_rejects_common_credential_patterns() -> None:
+    """Credential-like text should be blocked before embedding or persistence."""
+    store = QdrantMemoryStore(QdrantClient(location=":memory:"), MemoryEmbedder())
+
+    assert contains_sensitive_memory("password = super-secret")
+    assert contains_sensitive_memory("Bearer abcdefghijklmnop")
+    with pytest.raises(ValueError, match="sensitive credentials"):
+        store.remember(user_id="u", content="api_key=abcdefghijklmnop")
 
 
 class RecordingSummarizer:

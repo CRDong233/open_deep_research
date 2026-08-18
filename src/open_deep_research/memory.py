@@ -1,9 +1,11 @@
 """User-scoped long-term memory backed by Qdrant vectors."""
 
 import hashlib
+import math
 import re
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
@@ -13,6 +15,11 @@ from qdrant_client import QdrantClient, models
 from open_deep_research.evidence import Embedder
 
 _WHITESPACE = re.compile(r"\s+")
+_SENSITIVE_PATTERNS = (
+    re.compile(r"\b(?:api[_ -]?key|password|passwd|secret)\s*[:=]\s*\S+", re.I),
+    re.compile(r"\bbearer\s+[a-z0-9._~+/=-]{12,}", re.I),
+    re.compile(r"\bsk-[a-z0-9_-]{16,}\b", re.I),
+)
 
 
 class MemoryKind(str, Enum):
@@ -33,6 +40,7 @@ class MemoryRecord(BaseModel):
     importance: float = Field(default=0.5, ge=0, le=1)
     created_at: datetime
     updated_at: datetime
+    expires_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -48,6 +56,7 @@ class MemoryHit(BaseModel):
 
     record: MemoryRecord
     similarity: float
+    recency_score: float
     score: float
 
 
@@ -61,16 +70,32 @@ class QdrantMemoryStore:
         *,
         collection_name: str = "agent_memories",
         importance_weight: float = 0.15,
+        recency_weight: float = 0.0,
+        recency_half_life_days: float = 30.0,
+        default_ttl_days: float | None = None,
+        reject_sensitive: bool = True,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         """Create a memory store with a bounded importance contribution."""
         if not collection_name.strip():
             raise ValueError("collection_name must not be empty")
-        if not 0 <= importance_weight <= 1:
-            raise ValueError("importance_weight must be between 0 and 1")
+        if not 0 <= importance_weight <= 1 or not 0 <= recency_weight <= 1:
+            raise ValueError("memory score weights must be between 0 and 1")
+        if importance_weight + recency_weight > 1:
+            raise ValueError("memory score weights must sum to at most 1")
+        if recency_half_life_days <= 0:
+            raise ValueError("recency_half_life_days must be positive")
+        if default_ttl_days is not None and default_ttl_days <= 0:
+            raise ValueError("default_ttl_days must be positive")
         self.client = client
         self.embedder = embedder
         self.collection_name = collection_name
         self.importance_weight = importance_weight
+        self.recency_weight = recency_weight
+        self.recency_half_life_days = recency_half_life_days
+        self.default_ttl_days = default_ttl_days
+        self.reject_sensitive = reject_sensitive
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def remember(
         self,
@@ -80,6 +105,7 @@ class QdrantMemoryStore:
         kind: MemoryKind = MemoryKind.FACT,
         importance: float = 0.5,
         metadata: dict[str, Any] | None = None,
+        ttl_days: float | None = None,
     ) -> MemoryWriteResult:
         """Insert or update a normalized memory without creating duplicates."""
         normalized = normalize_memory_content(content)
@@ -89,11 +115,16 @@ class QdrantMemoryStore:
             raise ValueError("content must not be empty")
         if not 0 <= importance <= 1:
             raise ValueError("importance must be between 0 and 1")
+        active_ttl = self.default_ttl_days if ttl_days is None else ttl_days
+        if active_ttl is not None and active_ttl <= 0:
+            raise ValueError("ttl_days must be positive")
+        if self.reject_sensitive and contains_sensitive_memory(content):
+            raise ValueError("memory content appears to contain sensitive credentials")
 
         memory_id = build_memory_id(user_id, kind, normalized)
         point_id = self._point_id(memory_id)
         existing = self._retrieve_record(point_id)
-        now = datetime.now(timezone.utc)
+        now = self._now()
         record = MemoryRecord(
             memory_id=memory_id,
             user_id=user_id,
@@ -102,6 +133,7 @@ class QdrantMemoryStore:
             importance=importance,
             created_at=existing.created_at if existing else now,
             updated_at=now,
+            expires_at=(now + timedelta(days=active_ttl) if active_ttl else None),
             metadata=metadata or {},
         )
         vector = list(self.embedder.embed_query(record.content))
@@ -146,22 +178,45 @@ class QdrantMemoryStore:
                     )
                 ]
             ),
-            limit=top_k,
+            limit=max(top_k * 4, 20),
             with_payload=True,
         ).points
         hits: list[MemoryHit] = []
+        expired_point_ids: list[str | int] = []
+        now = self._now()
         for point in points:
             payload = point.payload or {}
             record_payload = payload.get("record")
             if not isinstance(record_payload, dict):
                 continue
             record = MemoryRecord.model_validate(record_payload)
+            if record.expires_at is not None and record.expires_at <= now:
+                expired_point_ids.append(point.id)
+                continue
+            age_days = max((now - record.updated_at).total_seconds(), 0) / 86400
+            recency_score = math.pow(0.5, age_days / self.recency_half_life_days)
+            similarity_weight = 1 - self.importance_weight - self.recency_weight
             score = (
-                1 - self.importance_weight
-            ) * point.score + self.importance_weight * record.importance
-            hits.append(MemoryHit(record=record, similarity=point.score, score=score))
+                similarity_weight * point.score
+                + self.importance_weight * record.importance
+                + self.recency_weight * recency_score
+            )
+            hits.append(
+                MemoryHit(
+                    record=record,
+                    similarity=point.score,
+                    recency_score=recency_score,
+                    score=score,
+                )
+            )
+        if expired_point_ids:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=expired_point_ids,
+                wait=True,
+            )
         hits.sort(key=lambda hit: (-hit.score, hit.record.memory_id))
-        return hits
+        return hits[:top_k]
 
     def forget(self, *, user_id: str, memory_id: str) -> bool:
         """Delete a memory only when it belongs to the requesting user."""
@@ -205,6 +260,13 @@ class QdrantMemoryStore:
             return None
         return MemoryRecord.model_validate(record_payload)
 
+    def _now(self) -> datetime:
+        """Return an aware UTC timestamp from the configured clock."""
+        now = self._clock()
+        if now.tzinfo is None:
+            raise ValueError("memory clock must return a timezone-aware datetime")
+        return now.astimezone(timezone.utc)
+
     @staticmethod
     def _point_id(memory_id: str) -> str:
         """Map a readable memory identifier to a Qdrant UUID."""
@@ -214,6 +276,11 @@ class QdrantMemoryStore:
 def normalize_memory_content(content: str) -> str:
     """Normalize content used for deterministic duplicate detection."""
     return _WHITESPACE.sub(" ", content).strip().casefold()
+
+
+def contains_sensitive_memory(content: str) -> bool:
+    """Detect common credential forms before durable memory writes."""
+    return any(pattern.search(content) for pattern in _SENSITIVE_PATTERNS)
 
 
 def build_memory_id(user_id: str, kind: MemoryKind, normalized_content: str) -> str:
