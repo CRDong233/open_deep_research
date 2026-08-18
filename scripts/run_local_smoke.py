@@ -8,7 +8,7 @@ import sys
 import time
 from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 
 def build_payload(prompt: str, timeout_seconds: int) -> dict[str, Any]:
