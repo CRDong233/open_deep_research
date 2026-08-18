@@ -47,7 +47,8 @@ def test_knowledge_service_ingests_and_returns_citations(tmp_path) -> None:
 
     assert service.indexed_chunks == 1
     assert service.ingestion is not None
-    assert "[E1] Tool Recovery" in result
+    assert "[E-" in result
+    assert "] Tool Recovery" in result
     assert "#char=" in result
     assert "bounded and observable" in result
 

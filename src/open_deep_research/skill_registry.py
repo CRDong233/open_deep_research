@@ -7,7 +7,7 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 _FRONTMATTER_DELIMITER = "---"
-_CITATION_PATTERN = re.compile(r"\[E\d+]")
+_CITATION_PATTERN = re.compile(r"\[E(?:-[0-9a-f]{10}|\d+)]", re.IGNORECASE)
 
 
 class SkillSpec(BaseModel):

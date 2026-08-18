@@ -4,6 +4,7 @@ from open_deep_research.evidence.chunking import ChunkingConfig, MarkdownChunker
 from open_deep_research.evidence.citations import (
     CitationAudit,
     audit_citations,
+    citation_id,
     format_evidence_context,
 )
 from open_deep_research.evidence.evaluation import (
@@ -50,6 +51,7 @@ __all__ = [
     "RetrievalHit",
     "RetrievalMetrics",
     "audit_citations",
+    "citation_id",
     "evaluate_retriever",
     "format_evidence_context",
     "ingest_directory",

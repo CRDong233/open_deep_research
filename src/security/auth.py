@@ -7,6 +7,7 @@ from typing import Optional, Any
 
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
+local_dev_auth_bypass = os.environ.get("LOCAL_DEV_AUTH_BYPASS", "false").lower() == "true"
 supabase: Optional[Client] = None
 
 if supabase_url and supabase_key:
@@ -21,6 +22,11 @@ auth = Auth()
 @auth.authenticate
 async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserDict:
     """Check if the user's JWT token is valid using Supabase."""
+
+    # Local development can run without Supabase credentials. Keep this opt-in
+    # and disabled by default so deployed instances still require real JWTs.
+    if local_dev_auth_bypass and not supabase:
+        return {"identity": "local-dev"}
 
     # Ensure we have authorization header
     if not authorization:

@@ -442,7 +442,9 @@ async def execute_tool_safely(tool, args, config):
         lambda: tool.ainvoke(args, config),
         policy,
     )
-    return result.as_tool_message()
+    return result.as_tool_message(
+        include_telemetry=configurable.include_tool_telemetry,
+    )
 
 
 async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> Command[Literal["researcher", "compress_research"]]:

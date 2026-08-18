@@ -20,7 +20,6 @@ output_requirements:
 
 Plan the minimum research needed to answer the question. Search the local knowledge base first when it is configured, then use web search only for missing or time-sensitive facts.
 
-Preserve every `[E#]` identifier returned by `knowledge_search` next to the claim it supports. Never invent a citation identifier. If evidence conflicts, present the conflict and source boundaries instead of silently choosing one source.
+Preserve every stable `[E-xxxxxxxxxx]` identifier returned by `knowledge_search` next to the claim it supports. Never invent a citation identifier. If evidence conflicts, present the conflict and source boundaries instead of silently choosing one source.
 
 Use `think_tool` between search rounds. Stop when the evidence is sufficient or the tool budget is exhausted, then call `ResearchComplete`.
-

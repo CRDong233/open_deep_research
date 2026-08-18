@@ -797,6 +797,8 @@ def _check_gemini_token_limit(exception: Exception, error_str: str) -> bool:
 
 # NOTE: This may be out of date or not applicable to your models. Please update this as needed.
 MODEL_TOKEN_LIMITS = {
+    "deepseek:deepseek-chat": 65536,
+    "deepseek:deepseek-reasoner": 65536,
     "openai:gpt-4.1-mini": 1047576,
     "openai:gpt-4.1-nano": 1047576,
     "openai:gpt-4.1": 1047576,
@@ -912,6 +914,8 @@ def get_api_key_for_model(model_name: str, config: RunnableConfig):
             return api_keys.get("OPENAI_API_KEY")
         elif model_name.startswith("anthropic:"):
             return api_keys.get("ANTHROPIC_API_KEY")
+        elif model_name.startswith("deepseek:"):
+            return api_keys.get("DEEPSEEK_API_KEY")
         elif model_name.startswith("google"):
             return api_keys.get("GOOGLE_API_KEY")
         return None
@@ -920,6 +924,8 @@ def get_api_key_for_model(model_name: str, config: RunnableConfig):
             return os.getenv("OPENAI_API_KEY")
         elif model_name.startswith("anthropic:"):
             return os.getenv("ANTHROPIC_API_KEY")
+        elif model_name.startswith("deepseek:"):
+            return os.getenv("DEEPSEEK_API_KEY")
         elif model_name.startswith("google"):
             return os.getenv("GOOGLE_API_KEY")
         return None

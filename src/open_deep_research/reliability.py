@@ -60,25 +60,46 @@ class ToolExecutionResult:
     error_message: str | None = None
     retryable: bool = False
 
-    def as_tool_message(self) -> str:
+    def as_tool_message(self, *, include_telemetry: bool = False) -> str:
         """Serialize an Agent-safe result without exposing exception internals."""
         if self.success:
+            value = self.value
+            if include_telemetry:
+                return json.dumps(
+                    {
+                        "schema_version": 1,
+                        "ok": True,
+                        "value": value,
+                        "telemetry": {
+                            "attempts": self.attempts,
+                            "duration_ms": round(self.duration_ms, 2),
+                            "error_kind": None,
+                        },
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                )
             if isinstance(self.value, str):
                 return self.value
             return json.dumps(self.value, ensure_ascii=False, default=str)
-        return json.dumps(
-            {
-                "ok": False,
-                "error": {
-                    "kind": self.error_kind.value if self.error_kind else "unknown",
-                    "type": self.error_type,
-                    "message": self.error_message,
-                    "retryable": self.retryable,
-                    "attempts": self.attempts,
-                },
+        payload = {
+            "schema_version": 1,
+            "ok": False,
+            "error": {
+                "kind": self.error_kind.value if self.error_kind else "unknown",
+                "type": self.error_type,
+                "message": self.error_message,
+                "retryable": self.retryable,
+                "attempts": self.attempts,
             },
-            ensure_ascii=False,
-        )
+        }
+        if include_telemetry:
+            payload["telemetry"] = {
+                "attempts": self.attempts,
+                "duration_ms": round(self.duration_ms, 2),
+                "error_kind": self.error_kind.value if self.error_kind else "unknown",
+            }
+        return json.dumps(payload, ensure_ascii=False)
 
 
 async def execute_with_policy(

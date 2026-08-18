@@ -68,6 +68,10 @@ class Configuration(BaseModel):
         le=30,
         description="Initial exponential backoff for retryable tool failures",
     )
+    include_tool_telemetry: bool = Field(
+        default=True,
+        description="Return versioned execution telemetry alongside tool values",
+    )
     enable_knowledge_search: bool = Field(
         default=False,
         description="Enable local Qdrant-backed knowledge retrieval",

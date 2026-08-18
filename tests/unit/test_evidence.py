@@ -16,6 +16,7 @@ from open_deep_research.evidence import (
     QdrantHybridRetriever,
     RetrievalExample,
     audit_citations,
+    citation_id,
     evaluate_retriever,
     format_evidence_context,
     ingest_directory,
@@ -122,13 +123,23 @@ def test_citation_context_and_audit_expose_unknown_references() -> None:
     hits = retriever.retrieve("citations", top_k=1)
 
     context = format_evidence_context(hits)
-    audit = audit_citations("Supported [E1], invented [E9].", hits)
+    stable_id = citation_id(hits[0].chunk.chunk_id)
+    audit = audit_citations(f"Supported [{stable_id}], legacy [E1], invented [E9].", hits)
 
-    assert "[E1] Agent handbook" in context
+    assert f"[{stable_id}] Agent handbook" in context
     assert "file:///agent.md#char=0,28" in context
-    assert audit.cited_ids == ["E1", "E9"]
-    assert audit.unknown_ids == ["E9"]
+    assert audit.cited_ids == [stable_id, "E1", "E9"]
+    assert audit.unknown_ids == ["E1", "E9"]
     assert not audit.valid
+
+
+def test_citation_id_is_stable_across_retrieval_rounds() -> None:
+    """The same chunk must keep one identifier across separate searches."""
+    chunk = make_chunk("document:stable-chunk", "Evidence requires citations.")
+    first = citation_id(chunk.chunk_id)
+    second = citation_id(chunk.model_copy().chunk_id)
+    assert first == second
+    assert first.startswith("E-")
 
 
 def test_evaluation_reports_recall_and_reciprocal_rank() -> None:

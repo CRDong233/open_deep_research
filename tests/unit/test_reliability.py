@@ -1,6 +1,7 @@
 """Unit tests for bounded Agent tool execution."""
 
 import asyncio
+import json
 
 import pytest
 
@@ -45,6 +46,24 @@ async def test_retryable_failure_recovers_with_backoff() -> None:
     assert result.attempts == 2
     assert result.value == {"recovered": True}
     assert sleeps == [0.1]
+
+
+@pytest.mark.asyncio
+async def test_success_telemetry_envelope_is_versioned() -> None:
+    """Telemetry should expose duration and attempts without changing the legacy API."""
+
+    async def operation() -> dict[str, bool]:
+        return {"ok": True}
+
+    result = await execute_with_policy(operation, ToolExecutionPolicy(max_attempts=1))
+    payload = result.as_tool_message(include_telemetry=True)
+
+    parsed = json.loads(payload)
+    assert parsed["schema_version"] == 1
+    assert parsed["ok"] is True
+    assert parsed["value"] == {"ok": True}
+    assert parsed["telemetry"]["attempts"] == 1
+    assert parsed["telemetry"]["duration_ms"] >= 0
 
 
 @pytest.mark.asyncio
@@ -147,6 +166,9 @@ async def test_deep_researcher_uses_reliability_configuration() -> None:
     result = await execute_tool_safely(tool, {"query": "RAG"}, config)
     unknown = await execute_tool_safely(None, {}, config)
 
-    assert result == "recovered:RAG"
+    payload = json.loads(result)
+    assert payload["schema_version"] == 1
+    assert payload["value"] == "recovered:RAG"
+    assert payload["telemetry"]["attempts"] == 2
     assert tool.attempts == 2
     assert '"kind": "invalid_input"' in unknown
