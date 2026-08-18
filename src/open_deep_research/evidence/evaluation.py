@@ -1,7 +1,9 @@
 """Deterministic retrieval metrics for local regression evaluation."""
 
+import json
 from collections.abc import Sequence
 from math import ceil
+from pathlib import Path
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -31,6 +33,22 @@ class RetrievalMetrics(BaseModel):
     mean_reciprocal_rank: float = Field(ge=0, le=1)
     evaluated_queries: int = Field(ge=0)
     top_k: int = Field(gt=0)
+
+
+def load_retrieval_examples(path: str | Path) -> list[RetrievalExample]:
+    """Load a version-controlled JSONL retrieval regression set."""
+    examples: list[RetrievalExample] = []
+    source = Path(path)
+    for line_number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            examples.append(RetrievalExample.model_validate_json(line))
+        except (json.JSONDecodeError, ValueError) as error:
+            raise ValueError(
+                f"invalid retrieval example at {source}:{line_number}"
+            ) from error
+    return examples
 
 
 class CitationMetrics(BaseModel):

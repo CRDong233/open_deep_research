@@ -1,6 +1,7 @@
 """Unit tests for offline evidence ingestion, retrieval, and evaluation."""
 
 from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 from qdrant_client import QdrantClient
@@ -23,6 +24,7 @@ from open_deep_research.evidence import (
     evaluate_retriever,
     format_evidence_context,
     ingest_directory,
+    load_retrieval_examples,
     summarize_evaluation_runs,
 )
 from open_deep_research.evidence.retrieval import tokenize
@@ -233,6 +235,27 @@ def test_evaluation_reports_recall_and_reciprocal_rank() -> None:
     assert metrics.recall_at_k == pytest.approx(1.0)
     assert metrics.mean_reciprocal_rank == pytest.approx(1.0)
     assert metrics.evaluated_queries == 2
+
+
+def test_versioned_retrieval_regression_set_has_thirty_cases() -> None:
+    """The fixed regression set should remain loadable and deterministic."""
+    fixture = Path("tests/fixtures/retrieval-regression.jsonl")
+    examples = load_retrieval_examples(fixture)
+    retriever = InMemoryHybridRetriever()
+    retriever.index(
+        [
+            make_chunk("retrieval", "hybrid retrieval BM25 embeddings"),
+            make_chunk("recovery", "bounded retry timeout recovery"),
+            make_chunk("memory", "long term memory preference"),
+        ]
+    )
+
+    metrics = evaluate_retriever(retriever, examples, top_k=1)
+
+    assert len(examples) == 30
+    assert metrics.evaluated_queries == 30
+    assert metrics.recall_at_k == pytest.approx(1)
+    assert metrics.mean_reciprocal_rank == pytest.approx(1)
 
 
 def test_invalid_limits_and_empty_queries_fail_safely() -> None:

@@ -15,6 +15,7 @@ from open_deep_research.evidence.evaluation import (
     RetrievalMetrics,
     evaluate_citation_references,
     evaluate_retriever,
+    load_retrieval_examples,
     summarize_evaluation_runs,
 )
 from open_deep_research.evidence.ingestion import (
@@ -67,4 +68,5 @@ __all__ = [
     "evaluate_citation_references",
     "format_evidence_context",
     "ingest_directory",
+    "load_retrieval_examples",
 ]

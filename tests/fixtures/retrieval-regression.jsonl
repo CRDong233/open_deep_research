@@ -1,0 +1,30 @@
+{"query":"hybrid retrieval", "relevant_chunk_ids":["retrieval"]}
+{"query":"BM25 embeddings", "relevant_chunk_ids":["retrieval"]}
+{"query":"retrieval strategy", "relevant_chunk_ids":["retrieval"]}
+{"query":"hybrid BM25", "relevant_chunk_ids":["retrieval"]}
+{"query":"embedding retrieval", "relevant_chunk_ids":["retrieval"]}
+{"query":"lexical retrieval", "relevant_chunk_ids":["retrieval"]}
+{"query":"semantic retrieval", "relevant_chunk_ids":["retrieval"]}
+{"query":"BM25 ranking", "relevant_chunk_ids":["retrieval"]}
+{"query":"dense retrieval", "relevant_chunk_ids":["retrieval"]}
+{"query":"retrieval evidence", "relevant_chunk_ids":["retrieval"]}
+{"query":"bounded retry", "relevant_chunk_ids":["recovery"]}
+{"query":"timeout recovery", "relevant_chunk_ids":["recovery"]}
+{"query":"retry policy", "relevant_chunk_ids":["recovery"]}
+{"query":"tool timeout", "relevant_chunk_ids":["recovery"]}
+{"query":"bounded timeout", "relevant_chunk_ids":["recovery"]}
+{"query":"recover from timeout", "relevant_chunk_ids":["recovery"]}
+{"query":"retry tool", "relevant_chunk_ids":["recovery"]}
+{"query":"timeout retry", "relevant_chunk_ids":["recovery"]}
+{"query":"recovery policy", "relevant_chunk_ids":["recovery"]}
+{"query":"bounded recovery", "relevant_chunk_ids":["recovery"]}
+{"query":"long term memory", "relevant_chunk_ids":["memory"]}
+{"query":"memory preference", "relevant_chunk_ids":["memory"]}
+{"query":"persistent memory", "relevant_chunk_ids":["memory"]}
+{"query":"user preference", "relevant_chunk_ids":["memory"]}
+{"query":"memory recall", "relevant_chunk_ids":["memory"]}
+{"query":"long memory", "relevant_chunk_ids":["memory"]}
+{"query":"preference memory", "relevant_chunk_ids":["memory"]}
+{"query":"remember preference", "relevant_chunk_ids":["memory"]}
+{"query":"memory facts", "relevant_chunk_ids":["memory"]}
+{"query":"agent memory", "relevant_chunk_ids":["memory"]}
