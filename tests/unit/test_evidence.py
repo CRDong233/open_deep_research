@@ -9,6 +9,7 @@ from open_deep_research.evidence import (
     ChunkingConfig,
     CitationMetrics,
     DirectoryDocumentLoader,
+    EvaluationRun,
     EvidenceChunk,
     EvidenceDocument,
     FastEmbedTextEmbedder,
@@ -22,6 +23,7 @@ from open_deep_research.evidence import (
     evaluate_retriever,
     format_evidence_context,
     ingest_directory,
+    summarize_evaluation_runs,
 )
 from open_deep_research.evidence.retrieval import tokenize
 
@@ -169,6 +171,46 @@ def test_citation_evaluation_separates_validity_from_coverage() -> None:
     assert metrics.valid_references == 1
     assert metrics.covered_evidence == 1
     assert metrics.unknown_ids == ["E-deadbeef00"]
+
+
+def test_evaluation_summary_only_aggregates_recorded_measurements() -> None:
+    """Run summaries should preserve missing values and classify failed runs."""
+    citation_metrics = CitationMetrics(
+        reference_validity=1,
+        evidence_coverage=0.5,
+        cited_references=1,
+        valid_references=1,
+        required_evidence=2,
+        covered_evidence=1,
+        unknown_ids=[],
+    )
+    summary = summarize_evaluation_runs(
+        [
+            EvaluationRun(
+                case_id="retrieval-001",
+                succeeded=True,
+                duration_ms=120,
+                total_tokens=300,
+                citation_metrics=citation_metrics,
+            ),
+            EvaluationRun(
+                case_id="retrieval-002",
+                succeeded=False,
+                duration_ms=480,
+                failure_kind="timeout",
+            ),
+        ]
+    )
+
+    assert summary.evaluated_runs == 2
+    assert summary.successful_runs == 1
+    assert summary.task_success_rate == pytest.approx(0.5)
+    assert summary.average_duration_ms == pytest.approx(300)
+    assert summary.p95_duration_ms == pytest.approx(480)
+    assert summary.average_total_tokens == pytest.approx(300)
+    assert summary.average_reference_validity == pytest.approx(1)
+    assert summary.average_evidence_coverage == pytest.approx(0.5)
+    assert summary.failure_kinds == {"timeout": 1}
 
 
 def test_evaluation_reports_recall_and_reciprocal_rank() -> None:

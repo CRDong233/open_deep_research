@@ -9,10 +9,13 @@ from open_deep_research.evidence.citations import (
 )
 from open_deep_research.evidence.evaluation import (
     CitationMetrics,
+    EvaluationRun,
+    EvaluationSummary,
     RetrievalExample,
     RetrievalMetrics,
     evaluate_citation_references,
     evaluate_retriever,
+    summarize_evaluation_runs,
 )
 from open_deep_research.evidence.ingestion import (
     DirectoryDocumentLoader,
@@ -42,6 +45,8 @@ __all__ = [
     "DEFAULT_EMBEDDING_MODEL",
     "Embedder",
     "DirectoryDocumentLoader",
+    "EvaluationRun",
+    "EvaluationSummary",
     "EvidenceChunk",
     "EvidenceDocument",
     "FastEmbedTextEmbedder",
@@ -56,6 +61,7 @@ __all__ = [
     "audit_citations",
     "citation_id",
     "evaluate_retriever",
+    "summarize_evaluation_runs",
     "evaluate_citation_references",
     "format_evidence_context",
     "ingest_directory",

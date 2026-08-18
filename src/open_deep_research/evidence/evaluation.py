@@ -1,6 +1,7 @@
 """Deterministic retrieval metrics for local regression evaluation."""
 
 from collections.abc import Sequence
+from math import ceil
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -42,6 +43,32 @@ class CitationMetrics(BaseModel):
     required_evidence: int = Field(ge=0)
     covered_evidence: int = Field(ge=0)
     unknown_ids: list[str]
+
+
+class EvaluationRun(BaseModel):
+    """Versioned result record for one reproducible Agent evaluation run."""
+
+    schema_version: int = Field(default=1, ge=1)
+    case_id: str = Field(min_length=1)
+    succeeded: bool
+    duration_ms: float = Field(ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    citation_metrics: CitationMetrics | None = None
+    failure_kind: str | None = None
+
+
+class EvaluationSummary(BaseModel):
+    """Aggregate only values actually recorded by evaluation runs."""
+
+    evaluated_runs: int = Field(ge=0)
+    successful_runs: int = Field(ge=0)
+    task_success_rate: float = Field(ge=0, le=1)
+    average_duration_ms: float | None = Field(default=None, ge=0)
+    p95_duration_ms: float | None = Field(default=None, ge=0)
+    average_total_tokens: float | None = Field(default=None, ge=0)
+    average_reference_validity: float | None = Field(default=None, ge=0, le=1)
+    average_evidence_coverage: float | None = Field(default=None, ge=0, le=1)
+    failure_kinds: dict[str, int]
 
 
 def evaluate_retriever(
@@ -116,4 +143,53 @@ def evaluate_citation_references(
         required_evidence=len(required_ids),
         covered_evidence=len(covered_ids),
         unknown_ids=sorted(unknown_ids),
+    )
+
+
+def summarize_evaluation_runs(
+    runs: Sequence[EvaluationRun],
+) -> EvaluationSummary:
+    """Aggregate versioned run records without inventing absent measurements."""
+    if not runs:
+        return EvaluationSummary(
+            evaluated_runs=0,
+            successful_runs=0,
+            task_success_rate=0,
+            failure_kinds={},
+        )
+
+    durations = sorted(run.duration_ms for run in runs)
+    successful_runs = sum(run.succeeded for run in runs)
+    token_values = [run.total_tokens for run in runs if run.total_tokens is not None]
+    citation_values = [
+        run.citation_metrics for run in runs if run.citation_metrics is not None
+    ]
+    failure_kinds: dict[str, int] = {}
+    for run in runs:
+        if run.succeeded or not run.failure_kind:
+            continue
+        failure_kinds[run.failure_kind] = failure_kinds.get(run.failure_kind, 0) + 1
+
+    return EvaluationSummary(
+        evaluated_runs=len(runs),
+        successful_runs=successful_runs,
+        task_success_rate=successful_runs / len(runs),
+        average_duration_ms=sum(durations) / len(durations),
+        p95_duration_ms=durations[ceil(0.95 * len(durations)) - 1],
+        average_total_tokens=(
+            sum(token_values) / len(token_values) if token_values else None
+        ),
+        average_reference_validity=(
+            sum(metric.reference_validity for metric in citation_values)
+            / len(citation_values)
+            if citation_values
+            else None
+        ),
+        average_evidence_coverage=(
+            sum(metric.evidence_coverage for metric in citation_values)
+            / len(citation_values)
+            if citation_values
+            else None
+        ),
+        failure_kinds=failure_kinds,
     )
