@@ -2,7 +2,9 @@
 
 import hashlib
 import re
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +12,24 @@ from open_deep_research.evidence.chunking import MarkdownChunker
 from open_deep_research.evidence.models import EvidenceChunk, EvidenceDocument
 
 _TITLE_PATTERN = re.compile(r"(?m)^#[ \t]+(.+?)[ \t]*$")
+_DEFAULT_SUFFIXES = (
+    ".md",
+    ".markdown",
+    ".txt",
+    ".pdf",
+    ".docx",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".java",
+    ".go",
+    ".rs",
+    ".sql",
+    ".sh",
+)
+_WORD_NAMESPACE = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
 class IngestionIssue(BaseModel):
@@ -34,7 +54,7 @@ class DirectoryDocumentLoader:
         self,
         root: str | Path,
         *,
-        allowed_suffixes: tuple[str, ...] = (".md", ".markdown", ".txt", ".pdf"),
+        allowed_suffixes: tuple[str, ...] = _DEFAULT_SUFFIXES,
         max_file_bytes: int = 2_000_000,
     ) -> None:
         """Configure a read-only directory scan."""
@@ -53,6 +73,7 @@ class DirectoryDocumentLoader:
 
         documents: list[EvidenceDocument] = []
         issues: list[IngestionIssue] = []
+        seen_content: dict[str, str] = {}
         candidates = sorted(
             (
                 path
@@ -74,7 +95,14 @@ class DirectoryDocumentLoader:
                 continue
             try:
                 content, extracted_metadata = self._read_content(path)
-            except (ImportError, OSError, RuntimeError, UnicodeDecodeError) as error:
+            except (
+                ImportError,
+                OSError,
+                RuntimeError,
+                UnicodeDecodeError,
+                zipfile.BadZipFile,
+                ElementTree.ParseError,
+            ) as error:
                 issues.append(
                     IngestionIssue(
                         path=relative_path,
@@ -87,6 +115,18 @@ class DirectoryDocumentLoader:
                     IngestionIssue(path=relative_path, reason="file is empty")
                 )
                 continue
+
+            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            duplicate_of = seen_content.get(content_hash)
+            if duplicate_of is not None:
+                issues.append(
+                    IngestionIssue(
+                        path=relative_path,
+                        reason=f"duplicate content of {duplicate_of}",
+                    )
+                )
+                continue
+            seen_content[content_hash] = relative_path
 
             title_match = _TITLE_PATTERN.search(content)
             title = title_match.group(1).strip() if title_match else path.stem
@@ -101,6 +141,7 @@ class DirectoryDocumentLoader:
                         "relative_path": relative_path,
                         "suffix": path.suffix.lower(),
                         "bytes": size,
+                        "content_sha256": content_hash,
                         **extracted_metadata,
                     },
                 )
@@ -110,7 +151,10 @@ class DirectoryDocumentLoader:
     @staticmethod
     def _read_content(path: Path) -> tuple[str, dict[str, int]]:
         """Return text plus format-specific metadata without executing a source."""
-        if path.suffix.lower() != ".pdf":
+        suffix = path.suffix.lower()
+        if suffix == ".docx":
+            return DirectoryDocumentLoader._read_docx(path)
+        if suffix != ".pdf":
             return path.read_text(encoding="utf-8"), {}
 
         import fitz  # type: ignore[import-untyped]
@@ -118,6 +162,22 @@ class DirectoryDocumentLoader:
         with fitz.open(path) as document:
             pages = [page.get_text("text") for page in document]
             return "\n\n".join(pages), {"pages": len(pages)}
+
+    @staticmethod
+    def _read_docx(path: Path) -> tuple[str, dict[str, int]]:
+        """Read paragraph text from a DOCX without extracting arbitrary files."""
+        with zipfile.ZipFile(path) as archive:
+            xml = archive.read("word/document.xml")
+        root = ElementTree.fromstring(xml)
+        paragraphs: list[str] = []
+        for paragraph in root.iter(f"{_WORD_NAMESPACE}p"):
+            text = "".join(
+                node.text or ""
+                for node in paragraph.iter(f"{_WORD_NAMESPACE}t")
+            ).strip()
+            if text:
+                paragraphs.append(text)
+        return "\n\n".join(paragraphs), {"paragraphs": len(paragraphs)}
 
 
 def ingest_directory(

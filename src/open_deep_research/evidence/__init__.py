@@ -32,6 +32,7 @@ from open_deep_research.evidence.qdrant_store import (
     DEFAULT_EMBEDDING_MODEL,
     FastEmbedTextEmbedder,
     QdrantHybridRetriever,
+    SnapshotSyncResult,
 )
 from open_deep_research.evidence.retrieval import (
     Embedder,
@@ -55,6 +56,7 @@ __all__ = [
     "IngestionResult",
     "MarkdownChunker",
     "QdrantHybridRetriever",
+    "SnapshotSyncResult",
     "RetrievalExample",
     "RetrievalHit",
     "RetrievalMetrics",

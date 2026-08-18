@@ -345,6 +345,28 @@ def test_directory_ingestion_extracts_pdf_text_and_page_metadata(tmp_path) -> No
     assert pdf.uri.endswith("evidence.pdf")
 
 
+def test_directory_ingestion_extracts_docx_and_detects_duplicate_content(tmp_path) -> None:
+    """DOCX paragraphs should be indexed while exact duplicate files are skipped."""
+    import zipfile
+
+    document_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:body><w:p><w:r><w:t>Agent evidence is traceable.</w:t></w:r></w:p>
+      <w:p><w:r><w:t>Retries remain bounded.</w:t></w:r></w:p></w:body>
+    </w:document>"""
+    for name in ("guide-a.docx", "guide-b.docx"):
+        with zipfile.ZipFile(tmp_path / name, "w") as archive:
+            archive.writestr("word/document.xml", document_xml)
+
+    result = ingest_directory(DirectoryDocumentLoader(tmp_path))
+
+    assert [document.title for document in result.documents] == ["guide-a"]
+    assert "Retries remain bounded." in result.documents[0].content
+    assert result.documents[0].metadata["paragraphs"] == 2
+    assert result.documents[0].metadata["content_sha256"]
+    assert result.issues[0].reason == "duplicate content of guide-a.docx"
+
+
 def test_qdrant_snapshot_can_be_loaded_without_reindexing() -> None:
     """Stored payloads should restore local BM25 state after a restart."""
     client = QdrantClient(location=":memory:")
@@ -362,3 +384,25 @@ def test_qdrant_snapshot_can_be_loaded_without_reindexing() -> None:
 
     assert loaded == 2
     assert hits[0].chunk.chunk_id == "recovery"
+
+
+def test_qdrant_sync_updates_and_removes_only_changed_chunks() -> None:
+    """Incremental sync should preserve unchanged vectors and delete stale chunks."""
+    client = QdrantClient(location=":memory:")
+    retriever = QdrantHybridRetriever(client, FakeEmbedder())
+    one = make_chunk("one", "agent recovery")
+    two = make_chunk("two", "agent planning")
+    three = make_chunk("three", "agent recovery three")
+    retriever.index([one, two])
+
+    result = retriever.sync_snapshot([one, three])
+
+    assert result.added_chunks == 1
+    assert result.updated_chunks == 0
+    assert result.removed_chunks == 1
+    assert result.unchanged_chunks == 1
+    assert retriever.indexed_count == 2
+    assert "two" not in {
+        hit.chunk.chunk_id for hit in retriever.retrieve("planning", top_k=2)
+    }
+    assert retriever.retrieve("three", top_k=1)[0].chunk.chunk_id == "three"

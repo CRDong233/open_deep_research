@@ -5,12 +5,22 @@ import uuid
 from collections.abc import Sequence
 
 from fastembed import TextEmbedding
+from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient, models
 
 from open_deep_research.evidence.models import EvidenceChunk, RetrievalHit
 from open_deep_research.evidence.retrieval import Embedder, InMemoryHybridRetriever
 
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+class SnapshotSyncResult(BaseModel):
+    """Counts returned by an incremental evidence snapshot update."""
+
+    added_chunks: int = Field(ge=0)
+    updated_chunks: int = Field(ge=0)
+    removed_chunks: int = Field(ge=0)
+    unchanged_chunks: int = Field(ge=0)
 
 
 class FastEmbedTextEmbedder:
@@ -132,6 +142,94 @@ class QdrantHybridRetriever:
             wait=True,
         )
 
+    def sync_snapshot(self, chunks: Sequence[EvidenceChunk]) -> SnapshotSyncResult:
+        """Incrementally upsert changed chunks and remove deleted chunks."""
+        snapshot = list(chunks)
+        chunk_ids = [chunk.chunk_id for chunk in snapshot]
+        if len(set(chunk_ids)) != len(chunk_ids):
+            raise ValueError("chunk_id values must be unique")
+        if not self.client.collection_exists(self.collection_name):
+            self.index(snapshot)
+            return SnapshotSyncResult(
+                added_chunks=len(snapshot),
+                updated_chunks=0,
+                removed_chunks=0,
+                unchanged_chunks=0,
+            )
+        if not self._chunks:
+            self.load_snapshot()
+
+        incoming = {chunk.chunk_id: chunk for chunk in snapshot}
+        existing_ids = set(self._chunks)
+        incoming_ids = set(incoming)
+        removed_ids = existing_ids - incoming_ids
+        changed = [
+            chunk
+            for chunk_id, chunk in incoming.items()
+            if self._chunks.get(chunk_id) != chunk
+        ]
+        added = sum(chunk_id not in existing_ids for chunk_id in incoming)
+        updated = len(changed) - added
+        unchanged = len(incoming_ids & existing_ids) - updated
+        self.update(changed, removed_chunk_ids=removed_ids)
+        return SnapshotSyncResult(
+            added_chunks=added,
+            updated_chunks=updated,
+            removed_chunks=len(removed_ids),
+            unchanged_chunks=unchanged,
+        )
+
+    def update(
+        self,
+        chunks: Sequence[EvidenceChunk],
+        *,
+        removed_chunk_ids: set[str] | None = None,
+    ) -> None:
+        """Apply a bounded chunk delta without deleting the collection."""
+        upserts = list(chunks)
+        upsert_ids = [chunk.chunk_id for chunk in upserts]
+        if len(set(upsert_ids)) != len(upsert_ids):
+            raise ValueError("chunk_id values must be unique")
+        if not self.client.collection_exists(self.collection_name):
+            raise ValueError("collection must exist before applying a delta")
+        if not self._chunks:
+            self.load_snapshot()
+
+        removed = set(removed_chunk_ids or ()) & set(self._chunks)
+        if removed:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=models.PointIdsList(
+                    points=[self._point_id(chunk_id) for chunk_id in removed]
+                ),
+                wait=True,
+            )
+            for chunk_id in removed:
+                self._chunks.pop(chunk_id, None)
+
+        if upserts:
+            vectors = [
+                list(vector)
+                for vector in self.embedder.embed_documents(
+                    [chunk.content for chunk in upserts]
+                )
+            ]
+            self._validate_vectors(vectors, len(upserts))
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=[
+                    models.PointStruct(
+                        id=self._point_id(chunk.chunk_id),
+                        vector=vector,
+                        payload={"chunk": chunk.model_dump(mode="json")},
+                    )
+                    for chunk, vector in zip(upserts, vectors)
+                ],
+                wait=True,
+            )
+            self._chunks.update({chunk.chunk_id: chunk for chunk in upserts})
+        self._lexical.index(list(self._chunks.values()))
+
     def load_snapshot(self) -> int:
         """Restore chunk payloads and BM25 state from an existing collection."""
         if not self.client.collection_exists(self.collection_name):
@@ -217,6 +315,11 @@ class QdrantHybridRetriever:
             )
             for rank, (chunk_id, score) in enumerate(ranked[:top_k], start=1)
         ]
+
+    @staticmethod
+    def _point_id(chunk_id: str) -> str:
+        """Map a stable chunk ID to Qdrant's deterministic point ID."""
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
 
     @staticmethod
     def _normalize(scores: dict[str, float]) -> dict[str, float]:
