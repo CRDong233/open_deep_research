@@ -8,8 +8,10 @@ from open_deep_research.evidence.citations import (
     format_evidence_context,
 )
 from open_deep_research.evidence.evaluation import (
+    CitationMetrics,
     RetrievalExample,
     RetrievalMetrics,
+    evaluate_citation_references,
     evaluate_retriever,
 )
 from open_deep_research.evidence.ingestion import (
@@ -35,6 +37,7 @@ from open_deep_research.evidence.retrieval import (
 
 __all__ = [
     "ChunkingConfig",
+    "CitationMetrics",
     "CitationAudit",
     "DEFAULT_EMBEDDING_MODEL",
     "Embedder",
@@ -53,6 +56,7 @@ __all__ = [
     "audit_citations",
     "citation_id",
     "evaluate_retriever",
+    "evaluate_citation_references",
     "format_evidence_context",
     "ingest_directory",
 ]

@@ -7,6 +7,7 @@ from qdrant_client import QdrantClient
 
 from open_deep_research.evidence import (
     ChunkingConfig,
+    CitationMetrics,
     DirectoryDocumentLoader,
     EvidenceChunk,
     EvidenceDocument,
@@ -17,6 +18,7 @@ from open_deep_research.evidence import (
     RetrievalExample,
     audit_citations,
     citation_id,
+    evaluate_citation_references,
     evaluate_retriever,
     format_evidence_context,
     ingest_directory,
@@ -140,6 +142,33 @@ def test_citation_id_is_stable_across_retrieval_rounds() -> None:
     second = citation_id(chunk.model_copy().chunk_id)
     assert first == second
     assert first.startswith("E-")
+
+
+def test_citation_evaluation_separates_validity_from_coverage() -> None:
+    """Reference validity should not be confused with required-evidence coverage."""
+    retriever = InMemoryHybridRetriever()
+    retriever.index(
+        [
+            make_chunk("retrieval", "Hybrid retrieval combines lexical ranking."),
+            make_chunk("recovery", "Retries must be bounded."),
+        ]
+    )
+    hits = retriever.retrieve("retrieval retries", top_k=2)
+    answer = f"Supported [{citation_id('retrieval')}], invented [E-deadbeef00]."
+
+    metrics = evaluate_citation_references(
+        answer,
+        hits,
+        required_chunk_ids={"retrieval", "recovery"},
+    )
+
+    assert isinstance(metrics, CitationMetrics)
+    assert metrics.reference_validity == pytest.approx(0.5)
+    assert metrics.evidence_coverage == pytest.approx(0.5)
+    assert metrics.cited_references == 2
+    assert metrics.valid_references == 1
+    assert metrics.covered_evidence == 1
+    assert metrics.unknown_ids == ["E-deadbeef00"]
 
 
 def test_evaluation_reports_recall_and_reciprocal_rank() -> None:

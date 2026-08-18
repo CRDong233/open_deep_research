@@ -5,6 +5,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
+from open_deep_research.evidence.citations import audit_citations, citation_id
 from open_deep_research.evidence.models import RetrievalHit
 
 
@@ -29,6 +30,18 @@ class RetrievalMetrics(BaseModel):
     mean_reciprocal_rank: float = Field(ge=0, le=1)
     evaluated_queries: int = Field(ge=0)
     top_k: int = Field(gt=0)
+
+
+class CitationMetrics(BaseModel):
+    """Deterministic source-reference and required-evidence metrics."""
+
+    reference_validity: float = Field(ge=0, le=1)
+    evidence_coverage: float = Field(ge=0, le=1)
+    cited_references: int = Field(ge=0)
+    valid_references: int = Field(ge=0)
+    required_evidence: int = Field(ge=0)
+    covered_evidence: int = Field(ge=0)
+    unknown_ids: list[str]
 
 
 def evaluate_retriever(
@@ -71,4 +84,36 @@ def evaluate_retriever(
         mean_reciprocal_rank=sum(reciprocal_ranks) / len(reciprocal_ranks),
         evaluated_queries=len(examples),
         top_k=top_k,
+    )
+
+
+def evaluate_citation_references(
+    answer: str,
+    hits: Sequence[RetrievalHit],
+    *,
+    required_chunk_ids: set[str],
+) -> CitationMetrics:
+    """Measure traceable references and coverage of expected evidence chunks.
+
+    This validates that citation identifiers point to supplied evidence. It does
+    not determine whether a cited source semantically entails the surrounding
+    claim; that requires a labelled review or a separate judge.
+    """
+    audit = audit_citations(answer, list(hits))
+    cited_ids = set(audit.cited_ids)
+    unknown_ids = set(audit.unknown_ids)
+    valid_ids = cited_ids - unknown_ids
+    required_ids = {citation_id(chunk_id) for chunk_id in required_chunk_ids}
+    covered_ids = valid_ids.intersection(required_ids)
+
+    return CitationMetrics(
+        reference_validity=len(valid_ids) / len(cited_ids) if cited_ids else 0,
+        evidence_coverage=(
+            len(covered_ids) / len(required_ids) if required_ids else 1
+        ),
+        cited_references=len(cited_ids),
+        valid_references=len(valid_ids),
+        required_evidence=len(required_ids),
+        covered_evidence=len(covered_ids),
+        unknown_ids=sorted(unknown_ids),
     )
