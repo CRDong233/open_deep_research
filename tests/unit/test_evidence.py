@@ -324,6 +324,27 @@ def test_directory_ingestion_is_bounded_and_traceable(tmp_path) -> None:
     }
 
 
+def test_directory_ingestion_extracts_pdf_text_and_page_metadata(tmp_path) -> None:
+    """PDF evidence should be readable without weakening bounded-file checks."""
+    import fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Hybrid retrieval keeps source references.")
+    document.save(tmp_path / "evidence.pdf")
+    document.close()
+
+    result = ingest_directory(DirectoryDocumentLoader(tmp_path))
+
+    assert len(result.documents) == 1
+    pdf = result.documents[0]
+    assert pdf.title == "evidence"
+    assert "Hybrid retrieval" in pdf.content
+    assert pdf.metadata["suffix"] == ".pdf"
+    assert pdf.metadata["pages"] == 1
+    assert pdf.uri.endswith("evidence.pdf")
+
+
 def test_qdrant_snapshot_can_be_loaded_without_reindexing() -> None:
     """Stored payloads should restore local BM25 state after a restart."""
     client = QdrantClient(location=":memory:")

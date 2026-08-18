@@ -28,13 +28,13 @@ class IngestionResult(BaseModel):
 
 
 class DirectoryDocumentLoader:
-    """Read bounded UTF-8 text files from one explicit root directory."""
+    """Read bounded text and PDF files from one explicit root directory."""
 
     def __init__(
         self,
         root: str | Path,
         *,
-        allowed_suffixes: tuple[str, ...] = (".md", ".markdown", ".txt"),
+        allowed_suffixes: tuple[str, ...] = (".md", ".markdown", ".txt", ".pdf"),
         max_file_bytes: int = 2_000_000,
     ) -> None:
         """Configure a read-only directory scan."""
@@ -73,12 +73,12 @@ class DirectoryDocumentLoader:
                 )
                 continue
             try:
-                content = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as error:
+                content, extracted_metadata = self._read_content(path)
+            except (ImportError, OSError, RuntimeError, UnicodeDecodeError) as error:
                 issues.append(
                     IngestionIssue(
                         path=relative_path,
-                        reason=f"unable to read UTF-8 text: {error.__class__.__name__}",
+                        reason=f"unable to read source: {error.__class__.__name__}",
                     )
                 )
                 continue
@@ -101,10 +101,23 @@ class DirectoryDocumentLoader:
                         "relative_path": relative_path,
                         "suffix": path.suffix.lower(),
                         "bytes": size,
+                        **extracted_metadata,
                     },
                 )
             )
         return documents, issues
+
+    @staticmethod
+    def _read_content(path: Path) -> tuple[str, dict[str, int]]:
+        """Return text plus format-specific metadata without executing a source."""
+        if path.suffix.lower() != ".pdf":
+            return path.read_text(encoding="utf-8"), {}
+
+        import fitz  # type: ignore[import-untyped]
+
+        with fitz.open(path) as document:
+            pages = [page.get_text("text") for page in document]
+            return "\n\n".join(pages), {"pages": len(pages)}
 
 
 def ingest_directory(
