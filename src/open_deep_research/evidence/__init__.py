@@ -38,6 +38,8 @@ from open_deep_research.evidence.qdrant_store import (
 from open_deep_research.evidence.retrieval import (
     Embedder,
     InMemoryHybridRetriever,
+    Reranker,
+    apply_reranker,
 )
 
 __all__ = [
@@ -46,6 +48,8 @@ __all__ = [
     "CitationAudit",
     "DEFAULT_EMBEDDING_MODEL",
     "Embedder",
+    "Reranker",
+    "apply_reranker",
     "DirectoryDocumentLoader",
     "EvaluationRun",
     "EvaluationSummary",

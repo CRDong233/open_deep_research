@@ -32,6 +32,7 @@ class KnowledgeSettings:
     collection_name: str = "evidence_chunks"
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     top_k: int = 5
+    minimum_relevance_score: float = 0.0
     max_file_bytes: int = 2_000_000
     rebuild: bool = False
 
@@ -39,6 +40,8 @@ class KnowledgeSettings:
         """Validate user-controlled knowledge settings."""
         if self.top_k <= 0:
             raise ValueError("top_k must be positive")
+        if not 0 <= self.minimum_relevance_score <= 1:
+            raise ValueError("minimum_relevance_score must be between 0 and 1")
         if self.max_file_bytes <= 0:
             raise ValueError("max_file_bytes must be positive")
         if not self.collection_name.strip():
@@ -55,6 +58,7 @@ class KnowledgeSettings:
             collection_name=configured.qdrant_collection,
             embedding_model=configured.embedding_model,
             top_k=configured.knowledge_top_k,
+            minimum_relevance_score=configured.minimum_relevance_score,
             max_file_bytes=configured.knowledge_max_file_bytes,
             rebuild=configured.rebuild_knowledge_index,
         )
@@ -66,6 +70,7 @@ class KnowledgeSearchService:
 
     retriever: QdrantHybridRetriever
     top_k: int
+    minimum_relevance_score: float = 0.0
     ingestion: IngestionResult | None = None
 
     @property
@@ -76,7 +81,7 @@ class KnowledgeSearchService:
     def search(self, query: str) -> str:
         """Return prompt-ready evidence with stable citation identifiers."""
         hits = self.retriever.retrieve(query, top_k=self.top_k)
-        if not hits:
+        if not hits or hits[0].score < self.minimum_relevance_score:
             return '{"ok": false, "reason": "no_evidence"}'
         return format_evidence_context(hits)
 
@@ -102,7 +107,11 @@ def build_knowledge_service(
     collection_exists = active_client.collection_exists(settings.collection_name)
     if collection_exists and not settings.rebuild:
         retriever.load_snapshot()
-        return KnowledgeSearchService(retriever=retriever, top_k=settings.top_k)
+        return KnowledgeSearchService(
+            retriever=retriever,
+            top_k=settings.top_k,
+            minimum_relevance_score=settings.minimum_relevance_score,
+        )
 
     if not settings.source_path:
         raise ValueError(
@@ -119,6 +128,7 @@ def build_knowledge_service(
     return KnowledgeSearchService(
         retriever=retriever,
         top_k=settings.top_k,
+        minimum_relevance_score=settings.minimum_relevance_score,
         ingestion=ingestion,
     )
 

@@ -96,3 +96,30 @@ def test_disabled_or_unconfigured_knowledge_fails_explicitly() -> None:
             client=QdrantClient(location=":memory:"),
             embedder=KeywordEmbedder(),
         )
+
+
+def test_minimum_relevance_score_turns_weak_matches_into_no_evidence(tmp_path) -> None:
+    """A configured low-score guard should fail closed instead of hallucinating."""
+    (tmp_path / "guide.md").write_text(
+        "# Recovery\n\nBounded retries are observable.",
+        encoding="utf-8",
+    )
+    service = build_knowledge_service(
+        KnowledgeSettings(
+            enabled=True,
+            source_path=str(tmp_path),
+            qdrant_location=":memory:",
+            top_k=1,
+            minimum_relevance_score=0.7,
+        ),
+        client=QdrantClient(location=":memory:"),
+        embedder=KeywordEmbedder(),
+    )
+
+    assert service.search("unrelated topic") == '{"ok": false, "reason": "no_evidence"}'
+
+
+def test_minimum_relevance_score_is_bounded() -> None:
+    """Threshold configuration should reject values outside the fused-score range."""
+    with pytest.raises(ValueError, match="minimum_relevance_score"):
+        KnowledgeSettings(minimum_relevance_score=1.1)

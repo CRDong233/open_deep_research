@@ -21,6 +21,34 @@ class Embedder(Protocol):
         """Embed one query using the same vector space."""
 
 
+class Reranker(Protocol):
+    """Optional post-retrieval ranking contract."""
+
+    def rerank(
+        self,
+        query: str,
+        hits: Sequence[RetrievalHit],
+        *,
+        top_k: int,
+    ) -> Sequence[RetrievalHit]:
+        """Return a reordered subset without changing evidence payloads."""
+
+
+def apply_reranker(
+    reranker: Reranker | None,
+    query: str,
+    hits: Sequence[RetrievalHit],
+    *,
+    top_k: int,
+) -> list[RetrievalHit]:
+    """Apply an optional reranker and normalize ranks deterministically."""
+    selected = list(hits)
+    if reranker is not None:
+        selected = list(reranker.rerank(query, selected, top_k=top_k))
+    selected = selected[:top_k]
+    return [hit.model_copy(update={"rank": rank}) for rank, hit in enumerate(selected, 1)]
+
+
 def tokenize(text: str) -> list[str]:
     """Tokenize Latin words and Chinese unigrams/bigrams for lexical search."""
     raw_tokens = [match.group(0).lower() for match in _TOKEN_PATTERN.finditer(text)]
@@ -57,6 +85,7 @@ class InMemoryHybridRetriever:
         semantic_weight: float = 0.6,
         k1: float = 1.5,
         b: float = 0.75,
+        reranker: Reranker | None = None,
     ) -> None:
         """Create an empty retriever with validated ranking parameters."""
         if not 0 <= semantic_weight <= 1:
@@ -67,6 +96,7 @@ class InMemoryHybridRetriever:
         self.semantic_weight = semantic_weight
         self.k1 = k1
         self.b = b
+        self.reranker = reranker
         self._chunks: list[EvidenceChunk] = []
         self._term_frequencies: list[Counter[str]] = []
         self._document_frequencies: Counter[str] = Counter()
@@ -132,7 +162,7 @@ class InMemoryHybridRetriever:
                     ),
                 )
             )
-        return hits
+        return apply_reranker(self.reranker, query, hits, top_k=top_k)
 
     def _bm25_scores(self, query_tokens: Sequence[str]) -> list[float]:
         """Calculate BM25 scores for the indexed snapshot."""

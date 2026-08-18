@@ -98,6 +98,12 @@ class Configuration(BaseModel):
         le=20,
         description="Maximum evidence chunks returned by knowledge_search",
     )
+    minimum_relevance_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Reject knowledge searches whose best fused score is below this threshold",
+    )
     knowledge_max_file_bytes: int = Field(
         default=2_000_000,
         ge=1,

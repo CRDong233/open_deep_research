@@ -9,7 +9,12 @@ from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient, models
 
 from open_deep_research.evidence.models import EvidenceChunk, RetrievalHit
-from open_deep_research.evidence.retrieval import Embedder, InMemoryHybridRetriever
+from open_deep_research.evidence.retrieval import (
+    Embedder,
+    InMemoryHybridRetriever,
+    Reranker,
+    apply_reranker,
+)
 
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
@@ -72,6 +77,7 @@ class QdrantHybridRetriever:
         semantic_weight: float = 0.6,
         candidate_multiplier: int = 4,
         replace_snapshot: bool = False,
+        reranker: Reranker | None = None,
     ) -> None:
         """Create a retriever that owns one explicitly named collection."""
         if not collection_name.strip():
@@ -86,6 +92,7 @@ class QdrantHybridRetriever:
         self.semantic_weight = semantic_weight
         self.candidate_multiplier = candidate_multiplier
         self.replace_snapshot = replace_snapshot
+        self.reranker = reranker
         self._lexical = InMemoryHybridRetriever()
         self._chunks: dict[str, EvidenceChunk] = {}
 
@@ -305,7 +312,7 @@ class QdrantHybridRetriever:
             ranked.append((chunk_id, combined))
         ranked.sort(key=lambda item: (-item[1], item[0]))
 
-        return [
+        hits = [
             RetrievalHit(
                 chunk=self._chunks[chunk_id],
                 rank=rank,
@@ -315,6 +322,7 @@ class QdrantHybridRetriever:
             )
             for rank, (chunk_id, score) in enumerate(ranked[:top_k], start=1)
         ]
+        return apply_reranker(self.reranker, query, hits, top_k=top_k)
 
     @staticmethod
     def _point_id(chunk_id: str) -> str:

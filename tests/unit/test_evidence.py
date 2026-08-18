@@ -105,6 +105,32 @@ class FakeEmbedder:
         return [1.0, 0.0]
 
 
+class ReverseReranker:
+    """Deterministic test double for the optional post-retrieval contract."""
+
+    def rerank(self, query, hits, *, top_k):
+        """Reverse candidates to prove the adapter controls final ordering."""
+        del query
+        return list(reversed(hits))[:top_k]
+
+
+def test_optional_reranker_reorders_hits_and_rebuilds_ranks() -> None:
+    """Reranking must be opt-in and preserve the original evidence payloads."""
+    retriever = InMemoryHybridRetriever(reranker=ReverseReranker())
+    retriever.index(
+        [
+            make_chunk("first", "agent recovery"),
+            make_chunk("second", "agent planning"),
+        ]
+    )
+
+    hits = retriever.retrieve("agent", top_k=2)
+
+    assert [hit.chunk.chunk_id for hit in hits] == ["second", "first"]
+    assert [hit.rank for hit in hits] == [1, 2]
+    assert retriever.reranker is not None
+
+
 def test_semantic_score_can_resolve_a_lexical_tie() -> None:
     """The optional semantic component should affect final ranking."""
     retriever = InMemoryHybridRetriever(embedder=FakeEmbedder(), semantic_weight=0.8)
